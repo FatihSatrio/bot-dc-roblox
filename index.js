@@ -12,8 +12,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.STATUS_CHANNEL_ID;
 const ROLE_ID = process.env.ALERT_ROLE_ID;
 
-const API_URL =
-  'https://4277980205320394.hostedstatus.com/1.0/status/59db90dbcdeb2f04dadcf16d';
+const API_URL = process.env.API_URL_ROBLOX;
 
 const INTERVAL = 60 * 1000;
 
