@@ -6,6 +6,8 @@ const {
   EmbedBuilder
 } = require('discord.js');
 
+/* ================= CONFIG ================= */
+
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.STATUS_CHANNEL_ID;
 const ROLE_ID = process.env.ALERT_ROLE_ID;
@@ -15,6 +17,8 @@ const API_URL =
 
 const INTERVAL = 60 * 1000;
 
+/* ================= CLIENT ================= */
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -22,9 +26,15 @@ const client = new Client({
   ]
 });
 
+/* ================= MEMORY ================= */
+
+const pingedIncidents = new Set();
+const pingedMaintenances = new Set();
+
 /* ================= UTIL ================= */
 
-const ts = d => `<t:${Math.floor(new Date(d).getTime() / 1000)}:F>`;
+const ts = d =>
+  `<t:${Math.floor(new Date(d).getTime() / 1000)}:F>`;
 
 function emoji(status = '') {
   status = status.toLowerCase();
@@ -47,28 +57,30 @@ function statusColor(status = '', code = 0) {
 function buildEmbeds(result) {
   const embeds = [];
 
+  /* ===== OVERALL ===== */
   embeds.push(
     new EmbedBuilder()
       .setTitle('📊 Roblox System Status (Realtime)')
       .setColor(
         statusColor(
-          result.status_overall.status,
-          result.status_overall.status_code
+          result.status_overall?.status,
+          result.status_overall?.status_code
         )
       )
       .setDescription(
-        `${emoji(result.status_overall.status)} **${result.status_overall.status}**\nUpdated ${ts(result.status_overall.updated)}`
+        `${emoji(result.status_overall?.status)} **${result.status_overall?.status}**\nUpdated ${ts(result.status_overall?.updated)}`
       )
       .setTimestamp()
   );
 
+  /* ===== SERVICES ===== */
   let svc = new EmbedBuilder()
     .setTitle('🧩 Services')
-    .setColor(statusColor(result.status_overall.status));
+    .setColor(statusColor(result.status_overall?.status));
 
   let count = 0;
 
-  for (const s of result.status) {
+  for (const s of result.status || []) {
     svc.addFields({
       name: `🔹 ${s.name}`,
       value: s.containers
@@ -82,48 +94,47 @@ function buildEmbeds(result) {
       embeds.push(svc);
       svc = new EmbedBuilder()
         .setTitle('🧩 Services (cont.)')
-        .setColor(statusColor(result.status_overall.status));
+        .setColor(statusColor(result.status_overall?.status));
       count = 0;
     }
   }
+
   if (count > 0) embeds.push(svc);
 
   /* ===== INCIDENT ===== */
-  if (result.incidents.length > 0) {
+  if (result.incidents?.length > 0) {
     for (const inc of result.incidents) {
       let desc = '';
 
       desc += `**${inc.name}**\n`;
-      desc += `${inc.current_active ? 'Operational' : 'Resolved'}\n\n`;
+      desc += `Incident Status\n`;
+      desc += `${inc.current_active ? 'Active' : 'Resolved'}\n\n`;
 
       desc += `**Components**\n`;
-      desc += inc.components_affected.map(c => c.name).join(', ');
+      desc += inc.components_affected?.map(c => c.name).join(', ') || '-';
       desc += `\n\n`;
 
       desc += `**Locations**\n`;
-      desc += inc.containers_affected.map(c => c.name).join(', ');
+      desc += inc.containers_affected?.map(c => c.name).join(', ') || '-';
       desc += `\n\n`;
 
-      for (const m of inc.messages) {
+      for (const msg of inc.messages || []) {
         const label =
-          m.details.toLowerCase().includes('operational')
+          msg.details?.toLowerCase().includes('operational') ||
+          msg.details?.toLowerCase().includes('resolved')
             ? 'IDENTIFIED'
             : 'INVESTIGATING';
 
-        desc += `${ts(m.datetime)}\n`;
+        desc += `${ts(msg.datetime)}\n`;
         desc += `${label}\n\n`;
-        desc += `${m.details}\n\n`;
+        desc += `${msg.details}\n\n`;
       }
 
       embeds.push(
         new EmbedBuilder()
           .setTitle('🚨 Active Incident')
           .setColor(
-            inc.messages.some(m =>
-              m.details.toLowerCase().includes('operational')
-            )
-              ? 0x2ECC71
-              : 0xE74C3C
+            inc.current_active ? 0xE74C3C : 0x2ECC71
           )
           .setDescription(desc)
       );
@@ -137,13 +148,42 @@ function buildEmbeds(result) {
     );
   }
 
+  /* ===== MAINTENANCE ===== */
+  const m = result.maintenance || { active: [], upcoming: [] };
+  let mDesc = '';
+
+  if (m.active.length === 0 && m.upcoming.length === 0) {
+    mDesc = '🟢 No active or upcoming maintenance.';
+  } else {
+    if (m.active.length > 0) {
+      mDesc += `**Active Maintenance**\n`;
+      for (const a of m.active) {
+        mDesc += `• ${a.name}\n`;
+      }
+      mDesc += '\n';
+    }
+
+    if (m.upcoming.length > 0) {
+      mDesc += `**Upcoming Maintenance**\n`;
+      for (const u of m.upcoming) {
+        mDesc += `• ${u.name}\n`;
+      }
+    }
+  }
+
+  embeds.push(
+    new EmbedBuilder()
+      .setTitle('🛠️ Maintenance')
+      .setColor(m.active.length > 0 ? 0xE67E22 : 0x3498DB)
+      .setDescription(mDesc)
+  );
+
   return embeds;
 }
 
 /* ================= REALTIME LOOP ================= */
 
 let statusMessage = null;
-let incidentPinged = false;
 
 async function updateStatus() {
   try {
@@ -153,13 +193,44 @@ async function updateStatus() {
 
     const embeds = buildEmbeds(result);
 
-    /* === DETECT REAL PROBLEM === */
-    const hasIncidentNeedingPing = result.incidents.some(inc =>
-      inc.current_active &&
-      !inc.messages.some(m =>
-        m.details.toLowerCase().includes('operational')
-      )
+    /* ===== INCIDENT PING PER ID ===== */
+    for (const inc of result.incidents || []) {
+      if (!inc.current_active) {
+        pingedIncidents.delete(inc.id);
+        continue;
+      }
+
+      const lastMsg = inc.messages?.[inc.messages.length - 1];
+      if (!lastMsg) continue;
+
+      const detail = lastMsg.details?.toLowerCase() || '';
+      if (detail.includes('operational') || detail.includes('resolved')) continue;
+
+      if (!pingedIncidents.has(inc.id)) {
+        await channel.send({
+          content: `🚨 <@&${ROLE_ID}> **Incident baru terdeteksi:** ${inc.name}`
+        });
+        pingedIncidents.add(inc.id);
+      }
+    }
+
+    /* ===== MAINTENANCE PING PER ID ===== */
+    for (const m of result.maintenance?.active || []) {
+      if (!pingedMaintenances.has(m.id)) {
+        await channel.send({
+          content: `🛠️ <@&${ROLE_ID}> **Maintenance aktif dimulai:** ${m.name}`
+        });
+        pingedMaintenances.add(m.id);
+      }
+    }
+
+    /* ===== RESET MAINTENANCE ===== */
+    const activeIds = new Set(
+      (result.maintenance?.active || []).map(m => m.id)
     );
+    for (const id of [...pingedMaintenances]) {
+      if (!activeIds.has(id)) pingedMaintenances.delete(id);
+    }
 
     if (!statusMessage) {
       const msgs = await channel.messages.fetch({ limit: 1 });
@@ -169,21 +240,8 @@ async function updateStatus() {
       }
     }
 
-    /* === ROLE PING (ONLY IF NOT OPERATIONAL) === */
-    if (hasIncidentNeedingPing && !incidentPinged) {
-      await channel.send({
-        content: `🚨 <@&${ROLE_ID}> **Roblox sedang mengalami gangguan aktif!**`
-      });
-      incidentPinged = true;
-    }
-
-    if (!hasIncidentNeedingPing) {
-      incidentPinged = false;
-    }
-
     await statusMessage.edit({ embeds });
     console.log('🔄 Status updated');
-
   } catch (err) {
     console.error('❌ Update failed:', err.message);
   }
