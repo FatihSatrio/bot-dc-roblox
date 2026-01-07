@@ -69,13 +69,16 @@ function buildEmbeds(result) {
       .setDescription(
         `${emoji(result.status_overall?.status)} **${result.status_overall?.status}**\nUpdated ${ts(result.status_overall?.updated)}`
       )
+      .setFooter({ text: `Last Update `})
       .setTimestamp()
   );
 
   /* ===== SERVICES ===== */
   let svc = new EmbedBuilder()
     .setTitle('🧩 Services')
-    .setColor(statusColor(result.status_overall?.status));
+    .setColor(statusColor(result.status_overall?.status))
+    .setFooter({ text: `Last Update`})
+    .setTimestamp();
 
   let count = 0;
 
@@ -93,7 +96,9 @@ function buildEmbeds(result) {
       embeds.push(svc);
       svc = new EmbedBuilder()
         .setTitle('🧩 Services (cont.)')
-        .setColor(statusColor(result.status_overall?.status));
+        .setColor(statusColor(result.status_overall?.status))
+        .setFooter({ text: `Last Update`})
+        .setTimestamp();
       count = 0;
     }
   }
@@ -136,6 +141,8 @@ function buildEmbeds(result) {
             inc.current_active ? 0xE74C3C : 0x2ECC71
           )
           .setDescription(desc)
+          .setFooter({ text: `Last Update`})
+          .setTimestamp()
       );
     }
   } else {
@@ -144,6 +151,8 @@ function buildEmbeds(result) {
         .setTitle('🚨 Active Incident')
         .setColor(0x2ECC71)
         .setDescription('🟢 No active incidents')
+        .setFooter({ text: `Last Update`})
+        .setTimestamp()
     );
   }
 
@@ -175,6 +184,8 @@ function buildEmbeds(result) {
       .setTitle('🛠️ Maintenance')
       .setColor(m.active.length > 0 ? 0xE67E22 : 0x3498DB)
       .setDescription(mDesc)
+      .setFooter({ text: `Last Update`})
+      .setTimestamp()
   );
 
   return embeds;
