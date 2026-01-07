@@ -1,19 +1,13 @@
 require('dotenv').config();
 const axios = require('axios');
-const {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder
-} = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
 
 /* ================= CONFIG ================= */
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.STATUS_CHANNEL_ID;
 const ROLE_ID = process.env.ALERT_ROLE_ID;
-
 const API_URL = process.env.API_URL_ROBLOX;
-
 const INTERVAL = 60 * 1000;
 
 /* ================= CLIENT ================= */
@@ -32,8 +26,7 @@ const pingedMaintenances = new Set();
 
 /* ================= UTIL ================= */
 
-const ts = d =>
-  `<t:${Math.floor(new Date(d).getTime() / 1000)}:F>`;
+const ts = d => `<t:${Math.floor(new Date(d).getTime() / 1000)}:F>`;
 
 function emoji(status = '') {
   status = status.toLowerCase();
@@ -261,6 +254,16 @@ async function updateStatus() {
 
 client.once('ready', async () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
+  client.user.setPresence({
+    activities: [
+      {
+        name: 'Roblox Status',
+        type: ActivityType.Watching
+      }
+    ],
+    status: 'online'
+  });
+  
   await updateStatus();
   setInterval(updateStatus, INTERVAL);
 });
